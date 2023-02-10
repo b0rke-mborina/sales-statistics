@@ -151,19 +151,29 @@ removeOutlier(salesDf)
 
 
 ######################## LINEAR MODEL PROFIT PREDICTION ########################
-install.packages(c('corrplot', 'PerformanceAnalytics'))
+install.packages(c('corrplot', 'PerformanceAnalytics', 'vcd'))
 library('corrplot')
 library('PerformanceAnalytics')
+library('vcd')
+
 
 # Data selection and preparation
 numericSalesData = salesData[, sapply(salesData, is.numeric)]
+factorSalesData = salesData[, sapply(salesData, is.factor)]
 
 # Correlation between variables + corrplot
 cor(numericSalesData)
 corMatrix <- cor(numericSalesData)
 
+# Numeric cor
 corrplot(corMatrix)
 chart.Correlation(corMatrix)
+
+# Factor cor
+summary(factorSalesData)
+mosaicplot(Container ~ Ship.Mode, data=factorSalesData, shade=TRUE, legend=TRUE)
+mosaicplot(Department ~ Ship.Mode, data=factorSalesData, shade=TRUE, legend=TRUE)
+mosaicplot(Ship.Mode ~ Container + Department, data=factorSalesData, shade=TRUE, legend=TRUE)
 
 # Linear model (automatic variable selection)
 
