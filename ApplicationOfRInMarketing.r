@@ -1,98 +1,80 @@
 ############################### DATA PREPARATION ###############################
 
-# load data from CSV file and check its structure
-rawSalesData <- read.csv("SuperstoreSalesTraining.csv",
-                         na.strings = "",
-                         stringsAsFactors = TRUE)
+# Load data from CSV file and check its structure
+rawSalesData <- read.csv("SuperstoreSalesTraining.csv", na.strings = "", stringsAsFactors = TRUE)
 str(rawSalesData)
 summary(rawSalesData)
 
-# remove unnecessary variables
+# Remove unnecessary variables (rawSalesData$Row)
 salesData <- subset(rawSalesData, select=-c(Row))
 str(salesData)
 summary(salesData)
 
-# remove columns with any missing data
-colnames(rawSalesData)
-colnames(rawSalesData[, colSums(is.na(rawSalesData)) == 0])
-colnames(rawSalesData[, colSums(is.na(rawSalesData)) > 0]) # "Postal.Code" "SubRegion"
-sum(is.na(rawSalesData$Postal.Code))  # 6985
-sum(is.na(rawSalesData$SubRegion))    # 7316
+# Filter NA
+colnames(salesData)  # All columns
+colnames(salesData[, colSums(is.na(salesData)) == 0])  # Non NA columns
+colnames(salesData[, colSums(is.na(salesData)) > 0]) # NA columns ("Postal.Code", "SubRegion")
+sum(is.na(salesData$Postal.Code))  # 6985 NA values
+sum(is.na(salesData$SubRegion))    # 7316 NA values
 
 salesData <- salesData[, colSums(is.na(salesData)) == 0]
 str(salesData)
 summary(salesData)
 
-# make sure variable types are OK
 
-# check numeric variables
-nums <- unlist(lapply(salesData, is.numeric), use.names = FALSE)
-colnames(salesData[ , nums]) # "Order" "Unit.Price" "Order.Quantity" "Sales" "Profit" "Shipping.Cost" "Customer_ID"
-# convert order number to character
-salesData$Order <- as.character(salesData$Order)
-class(salesData$Order)
 
-# check factor variables
-factors <- unlist(lapply(salesData, is.factor), use.names = FALSE)
-colnames(salesData[ , factors]) # "Order.Priority" "Order.Date" "Discount" "Product.Base.Margin" "Department" "Container"
-                                # "Category" "Item" "Customer.Segment" "Customer.Name" "Region" "State"
-                                # "Country...Region" "City" "Ship.Date" "Ship.Mode"
+# Numeric and factor variables
+isNumericColArr <- unlist(lapply(salesData, is.numeric), use.names = FALSE)
+isFactorColArr <- unlist(lapply(salesData, is.factor), use.names = FALSE)
 
-# convert date strings to dates
-salesData$Order.Date <- as.Date(salesData$Order.Date, format = "%d/%m/%Y")
-class(salesData$Order.Date)
-head(salesData$Order.Date)
+# Numeric: "Order" "Unit.Price" "Order.Quantity" "Sales" "Profit" "Shipping.Cost" "Customer_ID"
+colnames(salesData[, isNumericColArr])
 
-# convert discount to numeric
-salesData$Discount <- as.numeric(sub("%", "", salesData$Discount))/100
-class(salesData$Discount)
-head(salesData$Discount)
-
-# convert product base margin to numeric
-salesData$Product.Base.Margin <- as.numeric(sub("%", "", salesData$Product.Base.Margin))/100
-class(salesData$Product.Base.Margin)
-head(salesData$Product.Base.Margin)
-
-# convert item to character
-salesData$Item <- as.character(salesData$Item)
-class(salesData$Item)
-
-# convert customer name to character
-salesData$Customer.Name <- as.character(salesData$Customer.Name)
-class(salesData$Customer.Name)
-
-# convert ship date strings to dates
-salesData$Ship.Date <- as.Date(salesData$Ship.Date, format = "%d/%m/%Y")
-class(salesData$Ship.Date)
-head(salesData$Ship.Date)
-
-str(salesData)
-summary(salesData)
+# Factor:
+# "Order.Priority" "Order.Date" "Discount" "Product.Base.Margin" "Department" "Container"
+# "Category" "Item" "Customer.Segment" "Customer.Name" "Region" "State"
+# "Country...Region" "City" "Ship.Date" "Ship.Mode"
+colnames(salesData[, isFactorColArr])
 
 
 
-# remove outliers
+# Cast the data to the appropriate variable types
+salesData$Order               <- as.character(salesData$Order)
+salesData$Order.Date          <- as.Date(salesData$Order.Date, format = "%d/%m/%Y")
+salesData$Discount            <- as.numeric(sub("%", "", salesData$Discount)) / 100
+salesData$Product.Base.Margin <- as.numeric(sub("%", "", salesData$Product.Base.Margin)) / 100
+salesData$Item                <- as.character(salesData$Item)
+salesData$Customer.Name       <- as.character(salesData$Customer.Name)
+salesData$Ship.Date           <- as.Date(salesData$Ship.Date, format = "%d/%m/%Y")
 
-# detect outlier function
-detectOutlier <- function(x) {
-  quantile1 <- quantile(x, probs = .25)                     # calculate first quantile
-  quantile3 <- quantile(x, probs = .75)                     # calculate third quantile
-  IQR = quantile3 - quantile1                               # calculate inter quartile range
-  x > Quantile3 + (IQR * 1.5) | x < Quantile1 - (IQR * 1.5) # return true or false
+sapply(salesData, class)
+salesDf <- salesData[, c('Order', 'Order.Date', 'Discount', 'Product.Base.Margin', 'Item', 'Customer.Name', 'Ship.Date')]
+str(salesDf)
+
+
+
+# Remove outliers
+
+# Detect outlier function
+hasOutlier <- function(x) {
+    quantile1 <- quantile(x, probs = 1/4)
+    quantile3 <- quantile(x, probs = 3/4)
+    IQR = quantile3 - quantile1  # Inter quartile range
+    return(x > quantile3 + (IQR * 1.5) | x < quantile1 - (IQR * 1.5))
 }
 
-# create remove outlier function
-removeOutlier <- function(dataframe, columns = names(dataframe)) {
-  for (col in columns) {                                        # for loop to traverse in columns vector
-    dataframe <- dataframe[!detectOutlier(dataframe[[col]]), ]  # remove observation if it satisfies outlier function
-  }
-  # print("Remove outliers")
-  # print(dataframe)
-  return(dataframe)                                             # return dataframe
+# Create remove outlier function
+removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
+    for (col in columns) {
+        # Keep observation if it doesnt have an outlier
+        dataframe <- dataframe[!hasOutlier(dataframe[[col]]), ] 
+    }
+    return(dataframe)
 }
 
+removeOutlier(salesDf)
 
-# standardize data
+# Standardize data
 
 
 
@@ -169,17 +151,25 @@ removeOutlier <- function(dataframe, columns = names(dataframe)) {
 
 
 ######################## LINEAR MODEL PROFIT PREDICTION ########################
+install.packages(c('corrplot', 'PerformanceAnalytics'))
+library('corrplot')
+library('PerformanceAnalytics')
 
+# Data selection and preparation
+numericSalesData = salesData[, sapply(salesData, is.numeric)]
 
-# data selection and preparation
+# Correlation between variables + corrplot
+cor(numericSalesData)
+corMatrix <- cor(numericSalesData)
 
-# correlation between variables + corrplot
+corrplot(corMatrix)
+chart.Correlation(corMatrix)
 
-# linear model (automatic variable selection)
+# Linear model (automatic variable selection)
 
-# model performance
+# Model performance
 
-# plotting model
+# Plotting model
 
 
 # INTERPRETATION
