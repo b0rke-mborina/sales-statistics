@@ -72,7 +72,8 @@ removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
     return(dataframe)
 }
 
-removeOutlier(salesDf)
+
+# removeOutlier(salesDf)
 
 # Standardize data
 
@@ -151,7 +152,7 @@ removeOutlier(salesDf)
 
 
 ######################## LINEAR MODEL PROFIT PREDICTION ########################
-install.packages(c('corrplot', 'PerformanceAnalytics', 'vcd'))
+# install.packages(c('corrplot', 'PerformanceAnalytics', 'vcd'))
 library('corrplot')
 library('PerformanceAnalytics')
 library('vcd')
@@ -165,15 +166,39 @@ factorSalesData = salesData[, sapply(salesData, is.factor)]
 cor(numericSalesData)
 corMatrix <- cor(numericSalesData)
 
+
+
 # Numeric cor
 corrplot(corMatrix)
 chart.Correlation(corMatrix)
+
+fit <- lm(Profit ~ Sales, data=numericSalesData)
+summary(fit)  # Profit = 71.72 + 0.45 * Sales
+
+plot(numericSalesData$Profit, numericSalesData$Sales)
+abline(fit)
+
+
+
+df2 <- numericSalesData[numericSalesData$Profit > -100000 & numericSalesData$Profit < 10, ]
+df2 <- df2[order(df2$Profit),]
+head(df2)
+
+fit <- lm(Profit ~ Sales, data=df2)
+summary(fit)  # Profit = 71.72 + 0.45 * Sales
+
+plot(df2$Profit, df2$Sales)
+abline(fit)
+
+
 
 # Factor cor
 summary(factorSalesData)
 mosaicplot(Container ~ Ship.Mode, data=factorSalesData, shade=TRUE, legend=TRUE)
 mosaicplot(Department ~ Ship.Mode, data=factorSalesData, shade=TRUE, legend=TRUE)
-mosaicplot(Ship.Mode ~ Container + Department, data=factorSalesData, shade=TRUE, legend=TRUE)
+
+cor(factorSalesData$Department, factorSalesData$Ship.Mode)
+
 
 # Linear model (automatic variable selection)
 
