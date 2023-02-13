@@ -59,21 +59,21 @@ boxplot(salesData$Shipping.Cost)
 # Remove outliers
 
 # Detect outlier function
-# hasOutlier <- function(x) {
-#     quantile1 <- quantile(x, probs = 1/4)
-#     quantile3 <- quantile(x, probs = 3/4)
-#     IQR = quantile3 - quantile1  # Inter quartile range
-#     return(x > quantile3 + (IQR * 1.5) | x < quantile1 - (IQR * 1.5))
-# }
+hasOutlier <- function(x) {
+   quantile1 <- quantile(x, probs = 1/4)
+   quantile3 <- quantile(x, probs = 3/4)
+   IQR = quantile3 - quantile1  # Inter quartile range
+   return(x > quantile3 + (IQR * 1.5) | x < quantile1 - (IQR * 1.5))
+}
 
 # Create remove outlier function
-# removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
-#     for (col in columns) {
-#         # Keep observation if it doesnt have an outlier
-#         dataframe <- dataframe[!hasOutlier(dataframe[[col]]), ] 
-#     }
-#     return(dataframe)
-# }
+removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
+   for (col in columns) {
+       # Keep observation if it doesnt have an outlier
+       dataframe <- dataframe[!hasOutlier(dataframe[[col]]), ] 
+   }
+   return(dataframe)
+}
 
 # removeOutlier(salesDf)
 
@@ -189,17 +189,66 @@ prp(prunedTree)
 
 
 
-############################### GROUPING CLIENTS ###############################
+############################## GROUPING CUSTOMERS ##############################
 
 # data selection and preparation
 
-# find optimal number of clusters (euclidean distance, kmeans method)
+# install.packages(c("NbClust", "factoextra"))
+library("NbClust")
+library("factoextra")
+
+head(salesData)
+str(salesData)
+groupingData <- salesData[, c("Discount", "Unit.Price", "Order.Quantity",
+                              "Department", "Container", "Category",
+                              "Customer.Segment", "Customer_ID", "Region",
+                              "Country...Region", "City", "Ship.Mode")]
+str(groupingData)
+
+
+# remove outliers
+groupingData <- removeOutlier(groupingData,
+                              columns = c("Discount", "Unit.Price",
+                                          "Order.Quantity", "Customer_ID"))
+boxplot(groupingData)
+head(groupingData)
+str(groupingData)
+nrow(groupingData)
+
+# standardize
+groupingData$Department <- as.numeric(groupingData$Department)
+groupingData$Container <- as.numeric(groupingData$Container)
+groupingData$Category <- as.numeric(groupingData$Category)
+groupingData$Customer.Segment <- as.numeric(groupingData$Customer.Segment)
+groupingData$Region <- as.numeric(groupingData$Region)
+groupingData$Country...Region <- as.numeric(groupingData$Country...Region)
+groupingData$City <- as.numeric(groupingData$City)
+groupingData$Ship.Mode <- as.numeric(groupingData$Ship.Mode)
+str(groupingData)
+
+groupingDataScaled <- scale(groupingData)
+head(groupingDataScaled)
+str(groupingDataScaled)
+
+# find optimal number of clusters (partitional, kmeans method)
+numberOfClusters <- fviz_nbclust(groupingDataScaled, kmeans, method = "wss")
+names(numberOfClusters)
+# numberOfClusters$data$y
+n_clust<-numberOfClusters$data
+maxCluster<-as.numeric(n_clust$clusters[which.max(n_clust$y)])
+print(maxCluster)
 
 # grouping votes
 
+
+
 # group data
 
+
+
 # groups comparison
+
+
 
 
 # INTERPRETATION
