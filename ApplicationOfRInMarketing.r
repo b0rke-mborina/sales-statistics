@@ -1,4 +1,6 @@
 ############################### DATA PREPARATION ###############################
+# install.packages(c("ggplot2"))
+library("ggplot2")
 
 # Load data from CSV file and check its structure
 rawSalesData <- read.csv("SuperstoreSalesTraining.csv", na.strings = "", stringsAsFactors = TRUE)
@@ -36,7 +38,6 @@ colnames(salesData[, isNumericColArr])
 colnames(salesData[, isFactorColArr])
 
 
-
 # Cast the data to the appropriate variable types
 salesData$Order               <- as.character(salesData$Order)
 salesData$Order.Date          <- as.Date(salesData$Order.Date, format = "%d/%m/%Y")
@@ -46,48 +47,63 @@ salesData$Item                <- as.character(salesData$Item)
 salesData$Customer.Name       <- as.character(salesData$Customer.Name)
 salesData$Ship.Date           <- as.Date(salesData$Ship.Date, format = "%d/%m/%Y")
 
-# sapply(salesData, class)
-# salesDf <- salesData[, c('Order', 'Order.Date', 'Discount', 'Product.Base.Margin', 'Item', 'Customer.Name', 'Ship.Date')]
-# str(salesDf)
 
-boxplot(salesData$Unit.Price, salesData$Order.Quantity)
-boxplot(salesData$Order.Quantity)
-boxplot(salesData$Sales)
-boxplot(salesData$Profit)
-boxplot(salesData$Shipping.Cost)
+# Outliers and impossible data
+str(salesData)
 
-# Remove outliers
+min(salesData$Discount)             # 0 >= 0      OK
+max(salesData$Discount)             # 0.95 <= 1   OK
+
+min(salesData$Unit.Price)           # 1 >= 0      OK
+
+min(salesData$Order.Quantity)       # 1 >= 1      OK
+
+min(salesData$Sales)                # 0.9 >= 0    OK
+
+min(salesData$Shipping.Cost)        # 0 >= 0      OK
+
+min(salesData$Product.Base.Margin)  # 0.036 >= 0  OK
+max(salesData$Product.Base.Margin)  # 0.85 <= 1   OK
+
+ggplot() +
+  geom_histogram(aes(salesData$Order.Date)) # OK
+
+ggplot() +
+  geom_histogram(aes(salesData$Ship.Date))  # OK
+
+# All values are in allowed ranges.
+
+# Remove outliers helper functions
 
 # Detect outlier function
-# hasOutlier <- function(x) {
-#     quantile1 <- quantile(x, probs = 1/4)
-#     quantile3 <- quantile(x, probs = 3/4)
-#     IQR = quantile3 - quantile1  # Inter quartile range
-#     return(x > quantile3 + (IQR * 1.5) | x < quantile1 - (IQR * 1.5))
-# }
-
-# Create remove outlier function
-# removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
-#     for (col in columns) {
-#         # Keep observation if it doesnt have an outlier
-#         dataframe <- dataframe[!hasOutlier(dataframe[[col]]), ] 
-#     }
-#     return(dataframe)
-# }
+hasOutlier <- function(x) {
+   quantile1 <- quantile(x, probs = 1/4)
+   quantile3 <- quantile(x, probs = 3/4)
+   IQR = quantile3 - quantile1  # Inter quartile range
+   return(x > quantile3 + (IQR * 1.5) | x < quantile1 - (IQR * 1.5))
+}
 
 
-# removeOutlier(salesDf)
+removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
+   for (col in columns) {
+       # Keep observation if it doesnt have an outlier
+       dataframe <- dataframe[!hasOutlier(dataframe[[col]]), ] 
+   }
+   return(dataframe)
+}
 
-# Standardize data
-
+# Remove outliers
+# removeOutlier(salesData, columns = c("Discount", "Unit.Price", "Order.Quantity",
+#                                      "Sales", "Profit", "Shipping.Cost",
+#                                      "Product.Base.Margin"))
+# Outliers are not removed due to all values being real.
 
 
 ############################ PRODUCT CLASSIFICATION ############################
 
 # data selection and preparation
 
-# install.packages(c("ggplot2", "rpart", "rpart.plot"))
-library("ggplot2")
+# install.packages(c("rpart", "rpart.plot"))
 library("rpart")
 library("rpart.plot")
 
@@ -188,21 +204,139 @@ prp(prunedTree)
 
 
 
-############################### GROUPING CLIENTS ###############################
+############################# CLUSTERING CUSTOMERS #############################
 
 # data selection and preparation
 
-# find optimal number of clusters (euclidean distance, kmeans method)
+# install.packages(c("NbClust", "factoextra", "tidyr"))
+library("NbClust")
+library("factoextra")
+library("tidyr")
+
+head(salesData)
+str(salesData)
+
+# select data needed for clustering
+groupingData <- salesData[, c("Discount", "Unit.Price", "Order.Quantity",
+                              "Category", "Customer_ID",
+                              "Region")]
+str(groupingData)
+
+# aggragate and change data to desired shape
+groupingData$MoneySpent <- groupingData$Order.Quantity * groupingData$Unit.Price * (1 - groupingData$Discount)
+groupingData$Order.Quantity <- NULL
+groupingData$Unit.Price     <- NULL
+groupingData$Discount       <- NULL
+groupingData <- pivot_wider(groupingData, names_from = Category, values_from = MoneySpent, values_fn = sum, values_fill = 0)
+groupingData <- data.frame(groupingData)
+head(groupingData)
+
+# boxplot(groupingData[, -c(2, 3)])
+str(groupingData)
+nrow(groupingData)  # 3403
+colnames(groupingData)[1:2] # "Customer_ID" "Region"
+
+# standardize data
+groupingDataScaled <- scale(groupingData[, -c(1, 2)])
+head(groupingDataScaled)
+str(groupingDataScaled)
+
+# find optimal number of clusters (partitional, euclidean, kmeans)
+numberOfClusters <- NbClust(groupingDataScaled,
+                            distance = "euclidean", method = "kmeans",
+                            min.nc = 2, max.nc = 15)
+print(numberOfClusters)
 
 # grouping votes
+table(numberOfClusters$Best.nc[1,]) # 2
 
 # group data
+RNGkind(sample.kind = "Rounding")
+set.seed(2)
+groups <- kmeans(groupingDataScaled, 2, nstart = 25)
+print(groups)
 
 # groups comparison
+groups$size # 371, 3032
+groups$withinss # 40777.615, 9356.963
+length(groups$cluster) # 3403
 
+# create groups of data
+clusteredData <- data.frame(groupingData, groups$cluster)
+str(clusteredData)
+
+cluster1Data <- clusteredData[clusteredData$groups.cluster == 1,]
+str(cluster1Data)
+
+cluster2Data <- clusteredData[clusteredData$groups.cluster == 2,]
+str(cluster2Data)
+
+
+# plot clustered data
+colnames(clusteredData)
+
+plot(cluster1Data$Storage...Organization)
+plot(cluster2Data$Storage...Organization)
+
+plot(cluster1Data$Binders.and.Binder.Accessories)
+plot(cluster2Data$Binders.and.Binder.Accessories)
+
+plot(cluster1Data$Chairs...Chairmats)
+plot(cluster2Data$Chairs...Chairmats)
+
+plot(cluster1Data$Paper)
+plot(cluster2Data$Paper)
+
+plot(cluster1Data$Pens...Art.Supplies)
+plot(cluster2Data$Pens...Art.Supplies)
+
+plot(cluster1Data$Office.Machines)
+plot(cluster2Data$Office.Machines)
+
+plot(cluster1Data$Office.Furnishings)
+plot(cluster2Data$Office.Furnishings)
+
+plot(cluster1Data$Tables)
+plot(cluster2Data$Tables)
+
+plot(cluster1Data$Computer.Peripherals)
+plot(cluster2Data$Computer.Peripherals)
+
+plot(cluster1Data$Telephones.and.Communication)
+plot(cluster2Data$Telephones.and.Communication)
+
+ggplot(clusteredData, aes(x = Customer_ID, y = Computer.Peripherals, color = Region)) +
+  geom_point()
+
+ggplot(cluster1Data, aes(x = Customer_ID, y = Computer.Peripherals, color = Region)) +
+  geom_point()
+
+ggplot(cluster2Data, aes(x = Customer_ID, y = Computer.Peripherals, color = Region)) +
+  geom_point()
+
+
+ggplot(clusteredData, aes(x = Paper, y = Pens...Art.Supplies, color = Region)) +
+  geom_point()
+
+ggplot(cluster1Data, aes(x = Region, y = Paper, color = Region)) +
+  geom_point()
+
+# clusteredData[clusteredData$groups.cluster != 0,]
+ggplot(clusteredData, aes(x = Office.Furnishings, y = Tables, color = as.factor(groups.cluster))) +
+  geom_point() + xlim(0, 10000) + ylim(0, 20000)
+cluster2Data
+str(clusteredData)
 
 # INTERPRETATION
 
+ggplot(clusteredData, aes(x = Paper, y = Pens...Art.Supplies, color = as.factor(groups.cluster))) +
+  geom_point()
+
+ggplot(cluster1Data, aes(x = Paper, y = Pens...Art.Supplies, color = as.factor(groups.cluster))) +
+  geom_point()
+
+ggplot(cluster2Data, aes(x = Paper, y = Pens...Art.Supplies, color = as.factor(groups.cluster))) +
+  geom_point()
 
 
 ############################ TIME SERIES PREDICTION ############################
