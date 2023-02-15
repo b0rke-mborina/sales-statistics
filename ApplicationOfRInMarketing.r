@@ -242,62 +242,117 @@ prp(prunedTree)
 
 
 ######################## LINEAR MODEL PROFIT PREDICTION ########################
-# install.packages(c('corrplot', 'PerformanceAnalytics', 'vcd'))
+# install.packages(c('corrplot', 'PerformanceAnalytics', 'vcd', 'MASS', 'leaps', 'caret', 'bootstrap'))
 library('corrplot')
 library('PerformanceAnalytics')
 library('vcd')
-
+library('MASS')
+library('leaps')
+library('caret')
 
 # Data selection and preparation
-numericSalesData = salesData[, sapply(salesData, is.numeric)]
+numericSalesData = subset(salesData[, sapply(salesData, is.numeric)], select = -Customer_ID)
 factorSalesData = salesData[, sapply(salesData, is.factor)]
 
-# Correlation between variables + corrplot
-cor(numericSalesData)
-corMatrix <- cor(numericSalesData)
 
 
+# Simple one variable linear model for Profit prediction
+chart.Correlation(cor(numericSalesData))  # Profit ~ Sales -> 0.96***
 
-# Numeric cor
-corrplot(corMatrix)
-chart.Correlation(corMatrix)
+# Train 80%, Test 20%
+split_percentage = 0.8
+split <- sample(nrow(numericSalesData), split_percentage * nrow(numericSalesData))
+train <- numericSalesData[split, ]
+test <- numericSalesData[-split, ]
 
-fit <- lm(Profit ~ Sales, data=numericSalesData)
+fit <- lm(Profit ~ Sales, data=train)
 summary(fit)  # Profit = 71.72 + 0.45 * Sales
 
-plot(numericSalesData$Profit, numericSalesData$Sales)
-abline(fit)
+plot(train$Sales, train$Profit)
+abline(fit, col="Blue")
 
 
 
-df2 <- numericSalesData[numericSalesData$Profit > -100000 & numericSalesData$Profit < 10, ]
-df2 <- df2[order(df2$Profit),]
-head(df2)
+# Multiple variable regression, variable selection
+leaps <- regsubsets(Sales ~ ., data=numericSalesData, nbest=1)
+plot(leaps, scale="adjr2")
 
-fit <- lm(Profit ~ Sales, data=df2)
-summary(fit)  # Profit = 71.72 + 0.45 * Sales
+summary(leaps)
+#          Discount Unit.Price Order.Quantity Profit Shipping.Cost Product.Base.Margin
+# 1  ( 1 ) " "      " "        " "            "*"    " "           " "
+# 2  ( 1 ) " "      "*"        " "            "*"    " "           " "
+# 3  ( 1 ) " "      "*"        " "            "*"    " "           "*"
+# 4  ( 1 ) " "      "*"        "*"            "*"    " "           "*"
+# 5  ( 1 ) "*"      "*"        "*"            "*"    " "           "*"
+# 6  ( 1 ) "*"      "*"        "*"            "*"    "*"           "*"
 
-plot(df2$Profit, df2$Sales)
-abline(fit)
+# Single variable cor = Sales ~ Profit
+# Two variable cor = Sales ~ Profit + Unit.Price
+# ...
+# All variables included = Sales ~ .
 
 
+# K-fold cross-validated R-square
+shrinkage <- function(fit, k=10){
+    require(bootstrap)
+    
+    # Fit and predict functions
+    theta.fit <- function(x, y){lsfit(x, y)}
+    theta.predict <- function(fit, x){cbind(1, x) %*% fit$coef} 
+    
+    x <- fit$model[, 2:ncol(fit$model)]
+    y <- fit$model[, 1]
+    
+    results <- crossval(x, y, theta.fit, theta.predict, ngroup=k)
+    r2 <- cor(y, fit$fitted.values)**2  # Normal R2 
+    r2cv <- cor(y, results$cv.fit)**2   # Cross-validated R2
+    
+    cat("R-square =", r2, "\n")
+    cat(k, "Fold Cross-Validated R-square =", r2cv, "\n")
+    cat("Change =", r2 - r2cv, "\n")
+}
 
-# Factor cor
+
+# R-square = 0.7971082; acceptable R-square (~0.8)
+# 10 Fold Cross-Validated R-square = 0.7945547 
+# Change = 0.002553464; small change 
+shrinkage(lm(Profit ~ Sales, data=numericSalesData))
+
+# R-square = 0.8151863 
+# 10 Fold Cross-Validated R-square = 0.8113877 
+# Change = 0.003798527 
+shrinkage(lm(Profit ~ Sales + Unit.Price, data=numericSalesData))
+
+# R-square = 0.8396185 
+# 10 Fold Cross-Validated R-square = 0.8357494 
+# Change = 0.003869127 
+shrinkage(lm(Profit ~ Sales + Unit.Price + Product.Base.Margin, data=numericSalesData))
+
+# R-square = 0.8401814 
+# 10 Fold Cross-Validated R-square = 0.836934 
+# Change = 0.003247305 
+shrinkage(lm(Profit ~ Sales + Unit.Price + Product.Base.Margin + Order.Quantity, data=numericSalesData))
+
+# R-square = 0.8421473 
+# 10 Fold Cross-Validated R-square = 0.838756 
+# Change = 0.003391272 
+shrinkage(lm(Profit ~ Sales + Unit.Price + Product.Base.Margin + Order.Quantity + Discount, data=numericSalesData))
+
+# R-square = 0.8447364; good R-square (~0.84)
+# 10 Fold Cross-Validated R-square = 0.8416904 
+# Change = 0.003045998; small change
+shrinkage(lm(Profit ~ ., data=numericSalesData))
+
+
+# Factor correlation
 summary(factorSalesData)
 mosaicplot(Container ~ Ship.Mode, data=factorSalesData, shade=TRUE, legend=TRUE)
 mosaicplot(Department ~ Ship.Mode, data=factorSalesData, shade=TRUE, legend=TRUE)
+table(factorSalesData$Department, factorSalesData$Ship.Mode)
+table(factorSalesData$Container, factorSalesData$Ship.Mode)
 
-cor(factorSalesData$Department, factorSalesData$Ship.Mode)
+# X-squared = 4912, df = 4, p-value < 2.2e-16
+chisq.test(table(factorSalesData$Department, factorSalesData$Ship.Mode))
 
-
-# Linear model (automatic variable selection)
-
-# Model performance
-
-# Plotting model
-
-
-# INTERPRETATION
-
-
-
+# X-squared = 16636, df = 12, p-value < 2.2e-16
+chisq.test(table(factorSalesData$Container, factorSalesData$Ship.Mode))
