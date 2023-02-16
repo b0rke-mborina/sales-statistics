@@ -274,64 +274,70 @@ prp(prunedTree, extra = 4, nn = TRUE, yesno = 2, varlen = 0,
 
 
 ############################# CLUSTERING CUSTOMERS #############################
-
-# data selection and preparation
-
-# install.packages(c("NbClust", "factoextra", "tidyr"))
+# install.packages(c("NbClust", "factoextra"))
 library("NbClust")
 library("factoextra")
-library("tidyr")
 
+
+# data selection and preparation
 head(salesData)
 str(salesData)
 
 # select data needed for clustering
-groupingData <- salesData[, c("Discount", "Unit.Price", "Order.Quantity",
-                              "Category", "Customer_ID",
-                              "Region")]
-str(groupingData)
+clusteringData <- salesData[, c("Discount", "Unit.Price", "Order.Quantity",
+                                "Department", "Customer_ID", # "Category", 
+                                "Region")]
+str(clusteringData)
 
 # aggragate and change data to desired shape
-groupingData$MoneySpent <- groupingData$Order.Quantity * groupingData$Unit.Price * (1 - groupingData$Discount)
-groupingData$Order.Quantity <- NULL
-groupingData$Unit.Price     <- NULL
-groupingData$Discount       <- NULL
-groupingData <- pivot_wider(groupingData, names_from = Category, values_from = MoneySpent, values_fn = sum, values_fill = 0)
-groupingData <- data.frame(groupingData)
-head(groupingData)
+clusteringData$MoneySpent <- clusteringData$Order.Quantity * clusteringData$Unit.Price * (1 - clusteringData$Discount)
+clusteringData$Order.Quantity <- NULL
+clusteringData$Unit.Price     <- NULL
+clusteringData$Discount       <- NULL
+clusteringData <- pivot_wider(clusteringData, names_from = Category, values_from = MoneySpent, values_fn = sum, values_fill = 0)
+clusteringData <- data.frame(clusteringData)
+head(clusteringData)
+# aggragate and change data to desired shape
+clusteringData$MoneySpent <- clusteringData$Order.Quantity * clusteringData$Unit.Price * (1 - clusteringData$Discount)
+clusteringData$Order.Quantity <- NULL
+clusteringData$Unit.Price     <- NULL
+clusteringData$Discount       <- NULL
+clusteringData <- pivot_wider(clusteringData, names_from = Department, values_from = MoneySpent, values_fn = sum, values_fill = 0)
+clusteringData <- data.frame(clusteringData)
+head(clusteringData)
 
-# boxplot(groupingData[, -c(2, 3)])
-str(groupingData)
-nrow(groupingData)  # 3403
-colnames(groupingData)[1:2] # "Customer_ID" "Region"
+# boxplot(clusteringData[, -c(2, 3)])
+str(clusteringData)
+nrow(clusteringData)  # 3403
+colnames(clusteringData)[1:2] # "Customer_ID" "Region"
 
 # standardize data
-groupingDataScaled <- scale(groupingData[, -c(1, 2)])
-head(groupingDataScaled)
-str(groupingDataScaled)
+clusteringDataScaled <- scale(clusteringData[, -c(1, 2)])
+head(clusteringDataScaled)
+str(clusteringDataScaled)
 
 # find optimal number of clusters (partitional, euclidean, kmeans)
-numberOfClusters <- NbClust(groupingDataScaled,
+numberOfClusters <- NbClust(clusteringDataScaled,
                             distance = "euclidean", method = "kmeans",
                             min.nc = 2, max.nc = 15)
 print(numberOfClusters)
 
-# grouping votes
+# clustering votes
 table(numberOfClusters$Best.nc[1,]) # 2
 
 # group data
 RNGkind(sample.kind = "Rounding")
 set.seed(2)
-groups <- kmeans(groupingDataScaled, 2, nstart = 25)
+groups <- kmeans(clusteringDataScaled, 2, nstart = 25)
 print(groups)
 
 # groups comparison
-groups$size # 371, 3032
-groups$withinss # 40777.615, 9356.963
-length(groups$cluster) # 3403
+groups$size # 371, 3032 # 303, 3100
+groups$withinss # 40777.615, 9356.963 # 4728.549, 1421.516
+length(groups$cluster) # 3403 # 3403
 
 # create groups of data
-clusteredData <- data.frame(groupingData, groups$cluster)
+clusteredData <- data.frame(clusteringData, groups$cluster)
 str(clusteredData)
 
 cluster1Data <- clusteredData[clusteredData$groups.cluster == 1,]
@@ -343,6 +349,46 @@ str(cluster2Data)
 
 # plot clustered data
 colnames(clusteredData)
+
+plot(clusteredData$Office.Supplies)
+plot(cluster1Data$Office.Supplies)
+plot(cluster2Data$Office.Supplies)
+
+plot(clusteredData$Furniture)
+plot(cluster1Data$Furniture)
+plot(cluster2Data$Furniture)
+
+plot(clusteredData$Technology)
+plot(cluster1Data$Technology)
+plot(cluster2Data$Technology)
+
+ggplot(clusteredData, aes(x = Customer_ID, y = Technology, color = Region)) +
+  geom_point()
+
+ggplot(cluster1Data, aes(x = Customer_ID, y = Technology, color = Region)) +
+  geom_point()
+
+ggplot(cluster2Data, aes(x = Customer_ID, y = Technology, color = Region)) +
+  geom_point()
+
+ggplot(clusteredData, aes(x = Office.Supplies, y = Technology, color = as.factor(groups.cluster))) +
+  geom_point()
+
+ggplot(clusteredData, aes(x = Office.Supplies, y = Furniture, color = as.factor(groups.cluster))) +
+  geom_point()
+
+ggplot(clusteredData, aes(x = Technology, y = Office.Supplies, color = as.factor(groups.cluster))) +
+  geom_point()
+
+ggplot(clusteredData, aes(x = Technology, y = Furniture, color = as.factor(groups.cluster))) +
+  geom_point()
+
+ggplot(clusteredData, aes(x = Furniture, y = Office.Supplies, color = as.factor(groups.cluster))) +
+  geom_point()
+
+ggplot(clusteredData, aes(x = Furniture, y = Technology, color = as.factor(groups.cluster))) +
+  geom_point()
+
 
 plot(cluster1Data$Storage...Organization)
 plot(cluster2Data$Storage...Organization)
