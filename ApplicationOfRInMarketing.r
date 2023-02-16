@@ -1,28 +1,41 @@
 ############################### DATA PREPARATION ###############################
-# install.packages(c("ggplot2"))
+# install.packages(c("ggplot2", "dplyr", "tidyr"))
 library("ggplot2")
+library("dplyr")
+library("tidyr")
+
 
 # Load data from CSV file and check its structure
 rawSalesData <- read.csv("SuperstoreSalesTraining.csv", na.strings = "", stringsAsFactors = TRUE)
 str(rawSalesData)
 summary(rawSalesData)
 
+
 # Remove unnecessary variables (rawSalesData$Row)
 salesData <- subset(rawSalesData, select=-c(Row))
 str(salesData)
 summary(salesData)
 
-# Filter NA
-colnames(salesData)  # All columns
-colnames(salesData[, colSums(is.na(salesData)) == 0])  # Non NA columns
-colnames(salesData[, colSums(is.na(salesData)) > 0]) # NA columns ("Postal.Code", "SubRegion")
-sum(is.na(salesData$Postal.Code))  # 6985 NA values
-sum(is.na(salesData$SubRegion))    # 7316 NA values
+
+# Filter NA values
+colnames(salesData) # All columns
+colnames(salesData[, colSums(is.na(salesData)) == 0]) # Non NA columns
+colnames(salesData[, colSums(is.na(salesData)) > 0])  # NA columns ("Postal.Code", "SubRegion")
+sum(is.na(salesData$Postal.Code)) # 6985 NA values
+sum(is.na(salesData$SubRegion))   # 7316 NA values
+
+lapply(salesData, function(l) sum(is.na(l))) %>%
+  data.frame() %>%
+  pivot_longer(names_to = "columns", cols = names(.), values_to = "value") %>%
+  ggplot(aes(x = columns, y = value)) +
+  geom_bar(stat = "identity", fill = "deepskyblue") +
+  coord_flip() +
+  labs(x = "Variable", y = "Number of missing values",
+       title = "Number of missing values for dataframe variables")
 
 salesData <- salesData[, colSums(is.na(salesData)) == 0]
 str(salesData)
 summary(salesData)
-
 
 # Numeric and factor variables
 isNumericColArr <- unlist(lapply(salesData, is.numeric), use.names = FALSE)
@@ -46,6 +59,15 @@ salesData$Product.Base.Margin <- as.numeric(sub("%", "", salesData$Product.Base.
 salesData$Item                <- as.character(salesData$Item)
 salesData$Customer.Name       <- as.character(salesData$Customer.Name)
 salesData$Ship.Date           <- as.Date(salesData$Ship.Date, format = "%d/%m/%Y")
+str(salesData)
+
+ggplot(data.frame(table(sapply(salesData, class)))) +
+  geom_bar(aes(x = reorder(Var1, -Freq), y = Freq),
+           fill = "deepskyblue", stat = "identity") +
+  scale_y_continuous(breaks = seq(0, 10, 1)) +
+  labs(x = "Variable type", y = "Number of variables",
+       title = "Number of variables of each type in dataframe") +
+  theme(plot.title = element_text(hjust = 0.5))
 
 
 # Outliers and impossible data
@@ -65,11 +87,19 @@ min(salesData$Shipping.Cost)        # 0 >= 0      OK
 min(salesData$Product.Base.Margin)  # 0.036 >= 0  OK
 max(salesData$Product.Base.Margin)  # 0.85 <= 1   OK
 
-ggplot() +
-  geom_histogram(aes(salesData$Order.Date)) # OK
+ggplot(salesData) +
+  geom_histogram(aes(Order.Date), binwidth = 40, fill = "deepskyblue") +
+  xlab("Order Date value") + ylab("Frequency (count)") +
+  ggtitle("Order Date histogram") +
+  theme(plot.title = element_text(hjust = 0.5))
+# Order Date values are OK.
 
-ggplot() +
-  geom_histogram(aes(salesData$Ship.Date))  # OK
+ggplot(salesData) +
+  geom_histogram(aes(Ship.Date), binwidth = 40, fill = "deepskyblue") +
+  xlab("Ship Date value") + ylab("Frequency (count)") +
+  ggtitle("Ship Date histogram") +
+  theme(plot.title = element_text(hjust = 0.5))
+# Ship Date values are OK.
 
 # All values are in allowed ranges.
 
@@ -82,7 +112,6 @@ hasOutlier <- function(x) {
    IQR = quantile3 - quantile1  # Inter quartile range
    return(x > quantile3 + (IQR * 1.5) | x < quantile1 - (IQR * 1.5))
 }
-
 
 removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
    for (col in columns) {
@@ -99,58 +128,56 @@ removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
 # Outliers are not removed due to all values being real.
 
 
+
 ############################ PRODUCT CLASSIFICATION ############################
-
-# data selection and preparation
-
 # install.packages(c("rpart", "rpart.plot"))
 library("rpart")
 library("rpart.plot")
 
+
+# data selection and preparation
 head(salesData)
 str(salesData)
 classificationData <- salesData[, c("Order.Priority", "Discount", "Unit.Price",
                                     "Shipping.Cost", "Department", "Category",
                                     "Customer.Segment", "Region", "Ship.Mode",
                                     "Profit")]
-# , "Order.Quantity", "Sales", "Product.Base.Margin"
 str(classificationData)
 
-# Selected data includes variables which can help select products to be marketed
-# For example, it can be decided to market and advertise in specific regions,
-# market and advertise specific categories of products...
+# Selected data includes variables which can help select products to be
+# marketed. For example, it can be decided to market and advertise in specific
+# regions, market and advertise specific categories of products...
 
 
+# decide limit for profit (low and high)
 mean(classificationData$Profit)   # 882.1462
 median(classificationData$Profit) # 133.645
 
-modes <- function(x) {
-  ux <- unique(x)
-  tab <- tabulate(match(x, ux))
-  ux[tab == max(tab)]
-}
-modes(classificationData$Profit)  # 6.2
-
-plot(classificationData$Profit)
-abline(h = mean(classificationData$Profit), col = "#FF0000")
-abline(h = median(classificationData$Profit), col = "#0000FF")
-abline(h = 2000, col = "#00FF00")
-# ggplot(as.data.frame(classificationData$Profit))
-
 limit <- 2000 # low - high profit limit
 
+ggplot(classificationData) +
+  geom_point(aes(x = seq_along(Profit), y = Profit)) +
+  geom_hline(aes(yintercept = limit, linetype = "High-low limit"), col = "#FD5602") +
+  geom_hline(aes(yintercept = mean(Profit), linetype = "Mean"), col = "#FFAF42") +
+  geom_hline(aes(yintercept = median(Profit), linetype = "Median"), col = "#FEDEBE") +
+  labs(x = "Dataframe record index", y = "Profit",
+       title = "Profit scatterplot") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_linetype_manual(name = "Lines", values = c(1, 1, 1),
+                        guide = guide_legend(override.aes = list(color = c("#FD5602", "#FFAF42", "#FEDEBE"))))
+
+
+# create new factor variable which says if profit is high or low
 classificationData$ProfitFactor <- factor(ifelse(classificationData$Profit < limit, "Low", "High"))
 str(classificationData)
 head(classificationData[, c("Profit", "ProfitFactor")], 40)
-# 1 = High, 2 = Low
 
 classificationData <- classificationData[, -grep("^Profit$", colnames(classificationData))]
 str(classificationData)
+levels(classificationData$ProfitFactor) # ProfitFactor levels: 1 = High, 2 = Low
 
-# Profit variable is changed to ProfitFactor variable, which
 
-
-# divide data to train and test datasets
+# divide data to train and test datasets (ratio 70:30)
 RNGkind(sample.kind = "Rounding")
 set.seed(2)
 indices <- sample(nrow(classificationData), 0.7 * nrow(classificationData))
@@ -162,24 +189,65 @@ str(test)
 nrow(train) / (nrow(train) + nrow(test))  # 0.6999643
 nrow(test) / (nrow(train) + nrow(test))   # 0.3000357
 
+ggplot(data.frame(datasets = c("Train", "Test"),
+                  percentages = c(nrow(train) / (nrow(train) + nrow(test)),
+                                  nrow(test) / (nrow(train) + nrow(test)))),
+       aes(x = "", y = percentages, fill = datasets)) +
+  geom_bar(stat="identity", width = 1) +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  scale_fill_brewer(palette = "Oranges") +
+  # theme(legend.position = "none") +
+  geom_text(aes(y = c(0.35), label = "69.99643%"), size = 6) +
+  geom_text(aes(y = c(0.83), label = "30.00357%"), size = 6)
+
+# Dataset is divided to 2 parts in ratio approximate to 70:30.
+
 
 # create classification tree based on training data
 RNGkind(sample.kind = "Rounding")
 set.seed(2)
 tree <- rpart(ProfitFactor~., data = train, method = "class")
 print(tree)
-prp(tree)
+prp(tree, extra = 4, nn = TRUE, yesno = 2, varlen = 0,
+    box.col = ifelse(tree$frame$yval == 1, "#FF8303", "#FEDEBE"))
+# Tree shows classification of data. Using the tree, profit levels (high / low)
+# can be predicted based on variable values of the records. Furthermore,
+# expectations of profit from different products can be read from the tree.
+# Consequently, decisions can be made for which products will be marketed /
+# advertised.
+
 
 # variable importance
 print(tree$variable.importance)
-barplot(tree$variable.importance)
+
+ggplot(data = data.frame(tree$variable.importance,
+                         variable = names(tree$variable.importance))) +
+  geom_bar(aes(x = reorder(variable, -tree.variable.importance),
+               y = tree.variable.importance,
+               fill = reorder(variable, tree.variable.importance)),
+           stat = "identity") +
+  scale_fill_brewer(palette = "Oranges") +
+  theme(legend.position = "none") +
+  labs(x = "Variable", y = "Importance",
+       title = "Variable importance barplot")
+
+# Prices of products are the most important, which is expected. Product
+# categories and regions are important variables which can be used. Also,
+# interesting result is low importance of discount.
+
 
 # test classification tree on testing / validation data
 prediction <- predict(tree, newdata = test, type = "class")
 head(prediction)
 
+
+# calculate accuracy of the tree model
 accuracy <- sum(prediction == test$ProfitFactor) / nrow(test) * 100
 print(accuracy) # 92.5
+# Accuracy of the model is reasonably high. That means model is rather reliable
+# and can be used for marketing purposes.
+
 
 # pruning tree and performance advantages
 print(tree$cptable)
@@ -188,19 +256,20 @@ print(tree$cptable)
 # 2 0.01498127      2 0.7453184 0.7453184 0.02260634
 # 3 0.01000000      4 0.7153558 0.7393258 0.02252364
 min(tree$cptable[, "xerror"]) # 0.7393258
-# xstd = 0.02252364
+# xstd = 0.02252364 (from cptable)
 0.7393258 - 0.02252364  # 0.7168022
 0.7393258 + 0.02252364  # 0.7618494
+# interval between 0.7168022 and 0.7618494
+# Only xerror values from the cptable in the interval are the ones with 2 and 4
+# splits (value of nsplit variable).
 min(2, 4)  # nsplit = 2
-# CP = 0.01498127
+# CP = 0.01498127 (from table)
 
 prunedTree <- prune(tree, cp = 0.01498127)
 print(prunedTree)
-prp(prunedTree)
-# The tree is the same.
-
-
-# INTERPRETATION
+prp(prunedTree, extra = 4, nn = TRUE, yesno = 2, varlen = 0,
+    box.col = ifelse(prunedTree$frame$yval == 1, "#FF8303", "#FEDEBE"))
+# The tree is the same. There cannot be any performance advantages.
 
 
 
