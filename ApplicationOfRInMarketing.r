@@ -29,7 +29,7 @@ lapply(salesData, function(l) sum(is.na(l))) %>%
   data.frame() %>%
   pivot_longer(names_to = "columns", cols = names(.), values_to = "value") %>%
   ggplot(aes(x = columns, y = value)) +
-  geom_bar(stat = "identity", fill = "deepskyblue") +
+  geom_bar(stat = "identity", fill = "#6FD3FC") +
   coord_flip() +
   labs(x = "Variable", y = "Number of missing values",
        title = "Number of missing values for dataframe variables")
@@ -92,14 +92,14 @@ min(salesData$Product.Base.Margin)  # 0.036 >= 0  OK
 max(salesData$Product.Base.Margin)  # 0.85 <= 1   OK
 
 ggplot(salesData) +
-  geom_histogram(aes(Order.Date), binwidth = 40, fill = "deepskyblue") +
+  geom_histogram(aes(Order.Date), binwidth = 40, fill = "#6FD3FC") +
   xlab("Order Date value") + ylab("Frequency (count)") +
   ggtitle("Order Date histogram") +
   theme(plot.title = element_text(hjust = 0.5))
 # Order Date values are OK.
 
 ggplot(salesData) +
-  geom_histogram(aes(Ship.Date), binwidth = 40, fill = "deepskyblue") +
+  geom_histogram(aes(Ship.Date), binwidth = 40, fill = "#6FD3FC") +
   xlab("Ship Date value") + ylab("Frequency (count)") +
   ggtitle("Ship Date histogram") +
   theme(plot.title = element_text(hjust = 0.5))
@@ -130,6 +130,10 @@ removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
 #                                      "Sales", "Profit", "Shipping.Cost",
 #                                      "Product.Base.Margin"))
 # Outliers are not removed due to all values being real.
+
+
+# saving data to CSV file
+# write.csv(salesData, file = "data.csv", row.names = TRUE)
 
 
 
@@ -339,6 +343,11 @@ str(clusteringDataScaled)
 # important for finding number of clusters and grouping data.
 
 
+# Partitional clustering is selected to enable iterative relocation. Data will
+# be clustered using Kmeans method because it is good for large amounts of data.
+# Euclidean distance will be used due to regular distance between two values
+# being important.
+
 # find optimal number of clusters
 # (partitional clustering, euclidean distance, kmeans method)
 numberOfClusters <- NbClust(clusteringDataScaled,
@@ -350,7 +359,7 @@ print(numberOfClusters)
 # clustering votes
 table(numberOfClusters$Best.nc[1,]) # 2
 # Clustering votes also show, with significant difference, that the optimal
-# number of clusters as 2.
+# number of clusters is 2.
 
 # group data
 RNGkind(sample.kind = "Rounding")
@@ -438,10 +447,12 @@ ggplot() +
 # different.
 # First group consists of customers who spend large amounts of money
 # buying products. They can be described as loyal customers and marketing
-# products to them is not a priority.
+# products to them is not a priority. Customers from the first group usually
+# spend more than 30000 on products.
 # Second group consists of customers who spend smaller amounts of money on
 # products. They are customers to whom we are not main suppliers and marketing
-# products to them is a priority.
+# products to them is a priority. Customers from the first group usually spend
+# less than 30000 on products.
 
 
 
@@ -464,17 +475,6 @@ ggplot() +
 # residuals
 
 # forecasting by ARIMA model
-
-
-# INTERPRETATION
-
-
-
-############################ ADVANCED VISUALIZATION ############################
-
-# data selection and preparation
-
-# ggplot2 visualizations
 
 
 # INTERPRETATION
