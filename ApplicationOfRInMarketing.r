@@ -1,8 +1,9 @@
 ############################### DATA PREPARATION ###############################
-# install.packages(c("ggplot2", "dplyr", "tidyr"))
+# install.packages(c("ggplot2", "dplyr", "tidyr", "RColorBrewer"))
 library("ggplot2")
 library("dplyr")
 library("tidyr")
+library("RColorBrewer")
 
 
 # Load data from CSV file and check its structure
@@ -62,12 +63,15 @@ salesData$Ship.Date           <- as.Date(salesData$Ship.Date, format = "%d/%m/%Y
 str(salesData)
 
 ggplot(data.frame(table(sapply(salesData, class)))) +
-  geom_bar(aes(x = reorder(Var1, -Freq), y = Freq),
-           fill = "deepskyblue", stat = "identity") +
+  geom_bar(aes(x = reorder(Var1, -Freq), y = Freq,
+               fill = reorder(Var1, -Freq)),
+           stat = "identity") +
   scale_y_continuous(breaks = seq(0, 10, 1)) +
   labs(x = "Variable type", y = "Number of variables",
-       title = "Number of variables of each type in dataframe") +
-  theme(plot.title = element_text(hjust = 0.5))
+       title = "Number of variables of each type in dataframe",
+       fill = "Variable types") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_brewer(palette = "Blues", direction = -1)
 
 
 # Outliers and impossible data
@@ -197,9 +201,10 @@ ggplot(data.frame(datasets = c("Train", "Test"),
   coord_polar("y", start = 0) +
   theme_void() +
   scale_fill_brewer(palette = "Oranges") +
-  # theme(legend.position = "none") +
   geom_text(aes(y = c(0.35), label = "69.99643%"), size = 6) +
-  geom_text(aes(y = c(0.83), label = "30.00357%"), size = 6)
+  geom_text(aes(y = c(0.83), label = "30.00357%"), size = 6) +
+  labs(title = "Division of dataset", fill = "Datasets") +
+  theme(plot.title = element_text(hjust = 0.5))
 
 # Dataset is divided to 2 parts in ratio approximate to 70:30.
 
@@ -230,7 +235,8 @@ ggplot(data = data.frame(tree$variable.importance,
   scale_fill_brewer(palette = "Oranges") +
   theme(legend.position = "none") +
   labs(x = "Variable", y = "Importance",
-       title = "Variable importance barplot")
+       title = "Variable importance barplot") +
+  theme(plot.title = element_text(hjust = 0.5))
 
 # Prices of products are the most important, which is expected. Product
 # categories and regions are important variables which can be used. Also,
@@ -285,45 +291,66 @@ str(salesData)
 
 # select data needed for clustering
 clusteringData <- salesData[, c("Discount", "Unit.Price", "Order.Quantity",
-                                "Department", "Customer_ID", # "Category", 
-                                "Region")]
+                                "Department", "Customer_ID")]
 str(clusteringData)
 
+# Discount, Unit.Price and Order.Quantity variables will be used to calculate
+# total money spent by each customer. Customers will be represented by its IDs.
+# Total money spent by each customer will be calculated for each product
+# department (Technology, Office.Supplies, Furniture).
+
+
 # aggragate and change data to desired shape
-clusteringData$MoneySpent <- clusteringData$Order.Quantity * clusteringData$Unit.Price * (1 - clusteringData$Discount)
+clusteringData$TotalSpent <- clusteringData$Order.Quantity * clusteringData$Unit.Price * (1 - clusteringData$Discount)
 clusteringData$Order.Quantity <- NULL
 clusteringData$Unit.Price     <- NULL
 clusteringData$Discount       <- NULL
-clusteringData <- pivot_wider(clusteringData, names_from = Category, values_from = MoneySpent, values_fn = sum, values_fill = 0)
+clusteringData <- pivot_wider(clusteringData, names_from = Department, values_from = TotalSpent, values_fn = sum, values_fill = 0)
 clusteringData <- data.frame(clusteringData)
 head(clusteringData)
-# aggragate and change data to desired shape
-clusteringData$MoneySpent <- clusteringData$Order.Quantity * clusteringData$Unit.Price * (1 - clusteringData$Discount)
-clusteringData$Order.Quantity <- NULL
-clusteringData$Unit.Price     <- NULL
-clusteringData$Discount       <- NULL
-clusteringData <- pivot_wider(clusteringData, names_from = Department, values_from = MoneySpent, values_fn = sum, values_fill = 0)
-clusteringData <- data.frame(clusteringData)
-head(clusteringData)
+nrow(clusteringData)  # 3403
+str(clusteringData)
 
 # boxplot(clusteringData[, -c(2, 3)])
-str(clusteringData)
-nrow(clusteringData)  # 3403
-colnames(clusteringData)[1:2] # "Customer_ID" "Region"
+ggplot(clusteringData) +
+  geom_boxplot(aes(y = Furniture, x = "Furniture",
+                   fill = "Furniture")) +
+  geom_boxplot(aes(y = Office.Supplies, x = "Office.Supplies",
+                   fill = "Office.Supplies")) +
+  geom_boxplot(aes(y = Technology, x = "Technology",
+                   fill = "Technology")) +
+  labs(x = "", y = "Value",
+       title = "Boxplot of data for clustering") +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position="none") +
+  scale_fill_brewer(palette = "Greens")
+
+# Total spending values are grouped by department instead of by category to
+# avoid many variables and very large amount of zeroes.
+
 
 # standardize data
-clusteringDataScaled <- scale(clusteringData[, -c(1, 2)])
+colnames(clusteringData)[1] # "Customer_ID"
+clusteringDataScaled <- scale(clusteringData[, -1])
 head(clusteringDataScaled)
 str(clusteringDataScaled)
 
-# find optimal number of clusters (partitional, euclidean, kmeans)
+# Customer_ID variable is left out of standardized data because it is not
+# important for finding number of clusters and grouping data.
+
+
+# find optimal number of clusters
+# (partitional clustering, euclidean distance, kmeans method)
 numberOfClusters <- NbClust(clusteringDataScaled,
                             distance = "euclidean", method = "kmeans",
                             min.nc = 2, max.nc = 15)
 print(numberOfClusters)
+# The optimal number of clusters is 2.
 
 # clustering votes
 table(numberOfClusters$Best.nc[1,]) # 2
+# Clustering votes also show, with significant difference, that the optimal
+# number of clusters as 2.
 
 # group data
 RNGkind(sample.kind = "Rounding")
@@ -331,12 +358,17 @@ set.seed(2)
 groups <- kmeans(clusteringDataScaled, 2, nstart = 25)
 print(groups)
 
-# groups comparison
-groups$size # 371, 3032 # 303, 3100
-groups$withinss # 40777.615, 9356.963 # 4728.549, 1421.516
-length(groups$cluster) # 3403 # 3403
 
-# create groups of data
+# groups of customers comparison
+groups$size             # 303, 3100
+groups$withinss         # 4728.549, 1421.516
+length(groups$cluster)  # 3403
+
+# First group is much smaller than the second group. Sum of squares of elements
+# in first group seems to be much greater that the one in the second group.
+
+
+# create datasets of data from groups
 clusteredData <- data.frame(clusteringData, groups$cluster)
 str(clusteredData)
 
@@ -350,108 +382,67 @@ str(cluster2Data)
 # plot clustered data
 colnames(clusteredData)
 
-plot(clusteredData$Office.Supplies)
-plot(cluster1Data$Office.Supplies)
-plot(cluster2Data$Office.Supplies)
+ggplot() +
+  geom_point(data = cluster2Data,
+             aes(x = Customer_ID, y = Technology, colour = "2")) + 
+  geom_point(data = cluster1Data,
+            aes(x = Customer_ID, y = Technology, colour = "1")) +
+  xlim(c(1, 3403)) +
+  scale_colour_manual(values = rev(brewer.pal(name = "Greens", n = 8)[c(6, 8)])) +
+  labs(x = "Customer ID", y = "Total spent on technology",
+      title = "Total spent on technology by groups of customers",
+      colour = "Groups") +
+  theme(plot.title = element_text(hjust = 0.5))
 
-plot(clusteredData$Furniture)
-plot(cluster1Data$Furniture)
-plot(cluster2Data$Furniture)
+ggplot() +
+  geom_point(data = cluster2Data,
+             aes(x = Customer_ID, y = Office.Supplies, colour = "2")) + 
+  geom_point(data = cluster1Data,
+             aes(x = Customer_ID, y = Office.Supplies, colour = "1")) +
+  xlim(c(1, 3403)) +
+  scale_colour_manual(values = rev(brewer.pal(name = "Greens", n = 8)[c(6, 8)])) +
+  labs(x = "Customer ID", y = "Total spent on office supplies",
+       title = "Total spent on office supplies by groups of customers",
+       colour = "Groups") +
+  theme(plot.title = element_text(hjust = 0.5))
 
-plot(clusteredData$Technology)
-plot(cluster1Data$Technology)
-plot(cluster2Data$Technology)
+ggplot() +
+  geom_point(data = cluster2Data,
+             aes(x = Customer_ID, y = Furniture, colour = "2")) + 
+  geom_point(data = cluster1Data,
+             aes(x = Customer_ID, y = Furniture, colour = "1")) +
+  xlim(c(1, 3403)) +
+  scale_colour_manual(values = rev(brewer.pal(name = "Greens", n = 8)[c(6, 8)])) +
+  labs(x = "Customer ID", y = "Total spent on furniture",
+       title = "Total spent on furniture by groups of customers",
+       colour = "Groups") +
+  theme(plot.title = element_text(hjust = 0.5))
 
-ggplot(clusteredData, aes(x = Customer_ID, y = Technology, color = Region)) +
-  geom_point()
+ggplot() +
+  geom_point(data = data.frame(ID = cluster2Data$Customer_ID,
+                               TotalSpent = cluster2Data$Office.Supplies + cluster2Data$Furniture + cluster2Data$Technology),
+             aes(x = ID, y = TotalSpent, colour = "2")) +
+  geom_point(data = data.frame(ID = cluster1Data$Customer_ID,
+                               TotalSpent = cluster1Data$Office.Supplies + cluster1Data$Furniture + cluster1Data$Technology),
+             aes(x = ID, y = TotalSpent, colour = "1")) +
+  geom_hline(aes(yintercept = 30000), col = "#FD5602") +
+  geom_text(aes(x = c(3700), y = c(30000), label = "30000", vjust = -0.5), size = 4, col = "red") +
+  xlim(c(1, 3700)) +
+  scale_colour_manual(values = rev(brewer.pal(name = "Greens", n = 8)[c(6, 8)])) +
+  labs(x = "Customer ID", y = "Total spent",
+       title = "Total spent by groups of customers",
+       colour = "Groups") +
+  theme(plot.title = element_text(hjust = 0.5))
 
-ggplot(cluster1Data, aes(x = Customer_ID, y = Technology, color = Region)) +
-  geom_point()
+# As it can be seen from the plots, two groups of customers are are very
+# different.
+# First group consists of customers who spend large amounts of money
+# buying products. They can be described as loyal customers and marketing
+# products to them is not a priority.
+# Second group consists of customers who spend smaller amounts of money on
+# products. They are customers to whom we are not main suppliers and marketing
+# products to them is a priority.
 
-ggplot(cluster2Data, aes(x = Customer_ID, y = Technology, color = Region)) +
-  geom_point()
-
-ggplot(clusteredData, aes(x = Office.Supplies, y = Technology, color = as.factor(groups.cluster))) +
-  geom_point()
-
-ggplot(clusteredData, aes(x = Office.Supplies, y = Furniture, color = as.factor(groups.cluster))) +
-  geom_point()
-
-ggplot(clusteredData, aes(x = Technology, y = Office.Supplies, color = as.factor(groups.cluster))) +
-  geom_point()
-
-ggplot(clusteredData, aes(x = Technology, y = Furniture, color = as.factor(groups.cluster))) +
-  geom_point()
-
-ggplot(clusteredData, aes(x = Furniture, y = Office.Supplies, color = as.factor(groups.cluster))) +
-  geom_point()
-
-ggplot(clusteredData, aes(x = Furniture, y = Technology, color = as.factor(groups.cluster))) +
-  geom_point()
-
-
-plot(cluster1Data$Storage...Organization)
-plot(cluster2Data$Storage...Organization)
-
-plot(cluster1Data$Binders.and.Binder.Accessories)
-plot(cluster2Data$Binders.and.Binder.Accessories)
-
-plot(cluster1Data$Chairs...Chairmats)
-plot(cluster2Data$Chairs...Chairmats)
-
-plot(cluster1Data$Paper)
-plot(cluster2Data$Paper)
-
-plot(cluster1Data$Pens...Art.Supplies)
-plot(cluster2Data$Pens...Art.Supplies)
-
-plot(cluster1Data$Office.Machines)
-plot(cluster2Data$Office.Machines)
-
-plot(cluster1Data$Office.Furnishings)
-plot(cluster2Data$Office.Furnishings)
-
-plot(cluster1Data$Tables)
-plot(cluster2Data$Tables)
-
-plot(cluster1Data$Computer.Peripherals)
-plot(cluster2Data$Computer.Peripherals)
-
-plot(cluster1Data$Telephones.and.Communication)
-plot(cluster2Data$Telephones.and.Communication)
-
-ggplot(clusteredData, aes(x = Customer_ID, y = Computer.Peripherals, color = Region)) +
-  geom_point()
-
-ggplot(cluster1Data, aes(x = Customer_ID, y = Computer.Peripherals, color = Region)) +
-  geom_point()
-
-ggplot(cluster2Data, aes(x = Customer_ID, y = Computer.Peripherals, color = Region)) +
-  geom_point()
-
-
-ggplot(clusteredData, aes(x = Paper, y = Pens...Art.Supplies, color = Region)) +
-  geom_point()
-
-ggplot(cluster1Data, aes(x = Region, y = Paper, color = Region)) +
-  geom_point()
-
-# clusteredData[clusteredData$groups.cluster != 0,]
-ggplot(clusteredData, aes(x = Office.Furnishings, y = Tables, color = as.factor(groups.cluster))) +
-  geom_point() + xlim(0, 10000) + ylim(0, 20000)
-cluster2Data
-str(clusteredData)
-
-# INTERPRETATION
-
-ggplot(clusteredData, aes(x = Paper, y = Pens...Art.Supplies, color = as.factor(groups.cluster))) +
-  geom_point()
-
-ggplot(cluster1Data, aes(x = Paper, y = Pens...Art.Supplies, color = as.factor(groups.cluster))) +
-  geom_point()
-
-ggplot(cluster2Data, aes(x = Paper, y = Pens...Art.Supplies, color = as.factor(groups.cluster))) +
-  geom_point()
 
 
 ############################ TIME SERIES PREDICTION ############################
