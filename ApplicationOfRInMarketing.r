@@ -1,28 +1,42 @@
 ############################### DATA PREPARATION ###############################
-# install.packages(c("ggplot2"))
+# install.packages(c("ggplot2", "dplyr", "tidyr", "RColorBrewer"))
 library("ggplot2")
+library("dplyr")
+library("tidyr")
+library("RColorBrewer")
+
 
 # Load data from CSV file and check its structure
 rawSalesData <- read.csv("SuperstoreSalesTraining.csv", na.strings = "", stringsAsFactors = TRUE)
 str(rawSalesData)
 summary(rawSalesData)
 
+
 # Remove unnecessary variables (rawSalesData$Row)
 salesData <- subset(rawSalesData, select=-c(Row))
 str(salesData)
 summary(salesData)
 
-# Filter NA
-colnames(salesData)  # All columns
-colnames(salesData[, colSums(is.na(salesData)) == 0])  # Non NA columns
-colnames(salesData[, colSums(is.na(salesData)) > 0]) # NA columns ("Postal.Code", "SubRegion")
-sum(is.na(salesData$Postal.Code))  # 6985 NA values
-sum(is.na(salesData$SubRegion))    # 7316 NA values
+
+# Filter NA values
+colnames(salesData) # All columns
+colnames(salesData[, colSums(is.na(salesData)) == 0]) # Non NA columns
+colnames(salesData[, colSums(is.na(salesData)) > 0])  # NA columns ("Postal.Code", "SubRegion")
+sum(is.na(salesData$Postal.Code)) # 6985 NA values
+sum(is.na(salesData$SubRegion))   # 7316 NA values
+
+lapply(salesData, function(l) sum(is.na(l))) %>%
+  data.frame() %>%
+  pivot_longer(names_to = "columns", cols = names(.), values_to = "value") %>%
+  ggplot(aes(x = columns, y = value)) +
+  geom_bar(stat = "identity", fill = "#6FD3FC") +
+  coord_flip() +
+  labs(x = "Variable", y = "Number of missing values",
+       title = "Number of missing values for dataframe variables")
 
 salesData <- salesData[, colSums(is.na(salesData)) == 0]
 str(salesData)
 summary(salesData)
-
 
 # Numeric and factor variables
 isNumericColArr <- unlist(lapply(salesData, is.numeric), use.names = FALSE)
@@ -46,6 +60,18 @@ salesData$Product.Base.Margin <- as.numeric(sub("%", "", salesData$Product.Base.
 salesData$Item                <- as.character(salesData$Item)
 salesData$Customer.Name       <- as.character(salesData$Customer.Name)
 salesData$Ship.Date           <- as.Date(salesData$Ship.Date, format = "%d/%m/%Y")
+str(salesData)
+
+ggplot(data.frame(table(sapply(salesData, class)))) +
+  geom_bar(aes(x = reorder(Var1, -Freq), y = Freq,
+               fill = reorder(Var1, -Freq)),
+           stat = "identity") +
+  scale_y_continuous(breaks = seq(0, 10, 1)) +
+  labs(x = "Variable type", y = "Number of variables",
+       title = "Number of variables of each type in dataframe",
+       fill = "Variable types") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_brewer(palette = "Blues", direction = -1)
 
 
 # Outliers and impossible data
@@ -65,11 +91,19 @@ min(salesData$Shipping.Cost)        # 0 >= 0      OK
 min(salesData$Product.Base.Margin)  # 0.036 >= 0  OK
 max(salesData$Product.Base.Margin)  # 0.85 <= 1   OK
 
-ggplot() +
-  geom_histogram(aes(salesData$Order.Date)) # OK
+ggplot(salesData) +
+  geom_histogram(aes(Order.Date), binwidth = 40, fill = "#6FD3FC") +
+  xlab("Order Date value") + ylab("Frequency (count)") +
+  ggtitle("Order Date histogram") +
+  theme(plot.title = element_text(hjust = 0.5))
+# Order Date values are OK.
 
-ggplot() +
-  geom_histogram(aes(salesData$Ship.Date))  # OK
+ggplot(salesData) +
+  geom_histogram(aes(Ship.Date), binwidth = 40, fill = "#6FD3FC") +
+  xlab("Ship Date value") + ylab("Frequency (count)") +
+  ggtitle("Ship Date histogram") +
+  theme(plot.title = element_text(hjust = 0.5))
+# Ship Date values are OK.
 
 # All values are in allowed ranges.
 
@@ -82,7 +116,6 @@ hasOutlier <- function(x) {
    IQR = quantile3 - quantile1  # Inter quartile range
    return(x > quantile3 + (IQR * 1.5) | x < quantile1 - (IQR * 1.5))
 }
-
 
 removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
    for (col in columns) {
@@ -99,58 +132,60 @@ removeOutlier <- function(dataframe, columns = colnames(dataframe)) {
 # Outliers are not removed due to all values being real.
 
 
+# saving data to CSV file
+# write.csv(salesData, file = "data.csv", row.names = TRUE)
+
+
+
 ############################ PRODUCT CLASSIFICATION ############################
-
-# data selection and preparation
-
 # install.packages(c("rpart", "rpart.plot"))
 library("rpart")
 library("rpart.plot")
 
+
+# data selection and preparation
 head(salesData)
 str(salesData)
 classificationData <- salesData[, c("Order.Priority", "Discount", "Unit.Price",
                                     "Shipping.Cost", "Department", "Category",
                                     "Customer.Segment", "Region", "Ship.Mode",
                                     "Profit")]
-# , "Order.Quantity", "Sales", "Product.Base.Margin"
 str(classificationData)
 
-# Selected data includes variables which can help select products to be marketed
-# For example, it can be decided to market and advertise in specific regions,
-# market and advertise specific categories of products...
+# Selected data includes variables which can help select products to be
+# marketed. For example, it can be decided to market and advertise in specific
+# regions, market and advertise specific categories of products...
 
 
+# decide limit for profit (low and high)
 mean(classificationData$Profit)   # 882.1462
 median(classificationData$Profit) # 133.645
 
-modes <- function(x) {
-  ux <- unique(x)
-  tab <- tabulate(match(x, ux))
-  ux[tab == max(tab)]
-}
-modes(classificationData$Profit)  # 6.2
-
-plot(classificationData$Profit)
-abline(h = mean(classificationData$Profit), col = "#FF0000")
-abline(h = median(classificationData$Profit), col = "#0000FF")
-abline(h = 2000, col = "#00FF00")
-# ggplot(as.data.frame(classificationData$Profit))
-
 limit <- 2000 # low - high profit limit
 
+ggplot(classificationData) +
+  geom_point(aes(x = seq_along(Profit), y = Profit)) +
+  geom_hline(aes(yintercept = limit, linetype = "High-low limit"), col = "#FD5602") +
+  geom_hline(aes(yintercept = mean(Profit), linetype = "Mean"), col = "#FFAF42") +
+  geom_hline(aes(yintercept = median(Profit), linetype = "Median"), col = "#FEDEBE") +
+  labs(x = "Dataframe record index", y = "Profit",
+       title = "Profit scatterplot") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_linetype_manual(name = "Lines", values = c(1, 1, 1),
+                        guide = guide_legend(override.aes = list(color = c("#FD5602", "#FFAF42", "#FEDEBE"))))
+
+
+# create new factor variable which says if profit is high or low
 classificationData$ProfitFactor <- factor(ifelse(classificationData$Profit < limit, "Low", "High"))
 str(classificationData)
 head(classificationData[, c("Profit", "ProfitFactor")], 40)
-# 1 = High, 2 = Low
 
 classificationData <- classificationData[, -grep("^Profit$", colnames(classificationData))]
 str(classificationData)
+levels(classificationData$ProfitFactor) # ProfitFactor levels: 1 = High, 2 = Low
 
-# Profit variable is changed to ProfitFactor variable, which
 
-
-# divide data to train and test datasets
+# divide data to train and test datasets (ratio 70:30)
 RNGkind(sample.kind = "Rounding")
 set.seed(2)
 indices <- sample(nrow(classificationData), 0.7 * nrow(classificationData))
@@ -162,24 +197,67 @@ str(test)
 nrow(train) / (nrow(train) + nrow(test))  # 0.6999643
 nrow(test) / (nrow(train) + nrow(test))   # 0.3000357
 
+ggplot(data.frame(datasets = c("Train", "Test"),
+                  percentages = c(nrow(train) / (nrow(train) + nrow(test)),
+                                  nrow(test) / (nrow(train) + nrow(test)))),
+       aes(x = "", y = percentages, fill = datasets)) +
+  geom_bar(stat="identity", width = 1) +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  scale_fill_brewer(palette = "Oranges") +
+  geom_text(aes(y = c(0.35), label = "69.99643%"), size = 6) +
+  geom_text(aes(y = c(0.83), label = "30.00357%"), size = 6) +
+  labs(title = "Division of dataset", fill = "Datasets") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Dataset is divided to 2 parts in ratio approximate to 70:30.
+
 
 # create classification tree based on training data
 RNGkind(sample.kind = "Rounding")
 set.seed(2)
 tree <- rpart(ProfitFactor~., data = train, method = "class")
 print(tree)
-prp(tree)
+prp(tree, extra = 4, nn = TRUE, yesno = 2, varlen = 0,
+    box.col = ifelse(tree$frame$yval == 1, "#FF8303", "#FEDEBE"))
+# Tree shows classification of data. Using the tree, profit levels (high / low)
+# can be predicted based on variable values of the records. Furthermore,
+# expectations of profit from different products can be read from the tree.
+# Consequently, decisions can be made for which products will be marketed /
+# advertised.
+
 
 # variable importance
 print(tree$variable.importance)
-barplot(tree$variable.importance)
+
+ggplot(data = data.frame(tree$variable.importance,
+                         variable = names(tree$variable.importance))) +
+  geom_bar(aes(x = reorder(variable, -tree.variable.importance),
+               y = tree.variable.importance,
+               fill = reorder(variable, tree.variable.importance)),
+           stat = "identity") +
+  scale_fill_brewer(palette = "Oranges") +
+  theme(legend.position = "none") +
+  labs(x = "Variable", y = "Importance",
+       title = "Variable importance barplot") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Prices of products are the most important, which is expected. Product
+# categories and regions are important variables which can be used. Also,
+# interesting result is low importance of discount.
+
 
 # test classification tree on testing / validation data
 prediction <- predict(tree, newdata = test, type = "class")
 head(prediction)
 
+
+# calculate accuracy of the tree model
 accuracy <- sum(prediction == test$ProfitFactor) / nrow(test) * 100
 print(accuracy) # 92.5
+# Accuracy of the model is reasonably high. That means model is rather reliable
+# and can be used for marketing purposes.
+
 
 # pruning tree and performance advantages
 print(tree$cptable)
@@ -188,81 +266,119 @@ print(tree$cptable)
 # 2 0.01498127      2 0.7453184 0.7453184 0.02260634
 # 3 0.01000000      4 0.7153558 0.7393258 0.02252364
 min(tree$cptable[, "xerror"]) # 0.7393258
-# xstd = 0.02252364
+# xstd = 0.02252364 (from cptable)
 0.7393258 - 0.02252364  # 0.7168022
 0.7393258 + 0.02252364  # 0.7618494
+# interval between 0.7168022 and 0.7618494
+# Only xerror values from the cptable in the interval are the ones with 2 and 4
+# splits (value of nsplit variable).
 min(2, 4)  # nsplit = 2
-# CP = 0.01498127
+# CP = 0.01498127 (from table)
 
 prunedTree <- prune(tree, cp = 0.01498127)
 print(prunedTree)
-prp(prunedTree)
-# The tree is the same.
-
-
-# INTERPRETATION
+prp(prunedTree, extra = 4, nn = TRUE, yesno = 2, varlen = 0,
+    box.col = ifelse(prunedTree$frame$yval == 1, "#FF8303", "#FEDEBE"))
+# The tree is the same. There cannot be any performance advantages.
 
 
 
 ############################# CLUSTERING CUSTOMERS #############################
-
-# data selection and preparation
-
-# install.packages(c("NbClust", "factoextra", "tidyr"))
+# install.packages(c("NbClust", "factoextra"))
 library("NbClust")
 library("factoextra")
-library("tidyr")
 
+
+# data selection and preparation
 head(salesData)
 str(salesData)
 
 # select data needed for clustering
-groupingData <- salesData[, c("Discount", "Unit.Price", "Order.Quantity",
-                              "Category", "Customer_ID",
-                              "Region")]
-str(groupingData)
+clusteringData <- salesData[, c("Discount", "Unit.Price", "Order.Quantity",
+                                "Department", "Customer_ID")]
+str(clusteringData)
+
+# Discount, Unit.Price and Order.Quantity variables will be used to calculate
+# total money spent by each customer. Customers will be represented by its IDs.
+# Total money spent by each customer will be calculated for each product
+# department (Technology, Office.Supplies, Furniture).
+
 
 # aggragate and change data to desired shape
-groupingData$MoneySpent <- groupingData$Order.Quantity * groupingData$Unit.Price * (1 - groupingData$Discount)
-groupingData$Order.Quantity <- NULL
-groupingData$Unit.Price     <- NULL
-groupingData$Discount       <- NULL
-groupingData <- pivot_wider(groupingData, names_from = Category, values_from = MoneySpent, values_fn = sum, values_fill = 0)
-groupingData <- data.frame(groupingData)
-head(groupingData)
+clusteringData$TotalSpent <- clusteringData$Order.Quantity * clusteringData$Unit.Price * (1 - clusteringData$Discount)
+clusteringData$Order.Quantity <- NULL
+clusteringData$Unit.Price     <- NULL
+clusteringData$Discount       <- NULL
+clusteringData <- pivot_wider(clusteringData, names_from = Department, values_from = TotalSpent, values_fn = sum, values_fill = 0)
+clusteringData <- data.frame(clusteringData)
+head(clusteringData)
+nrow(clusteringData)  # 3403
+str(clusteringData)
 
-# boxplot(groupingData[, -c(2, 3)])
-str(groupingData)
-nrow(groupingData)  # 3403
-colnames(groupingData)[1:2] # "Customer_ID" "Region"
+# boxplot(clusteringData[, -c(2, 3)])
+ggplot(clusteringData) +
+  geom_boxplot(aes(y = Furniture, x = "Furniture",
+                   fill = "Furniture")) +
+  geom_boxplot(aes(y = Office.Supplies, x = "Office.Supplies",
+                   fill = "Office.Supplies")) +
+  geom_boxplot(aes(y = Technology, x = "Technology",
+                   fill = "Technology")) +
+  labs(x = "", y = "Value",
+       title = "Boxplot of data for clustering") +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position="none") +
+  scale_fill_brewer(palette = "Greens")
+
+# Total spending values are grouped by department instead of by category to
+# avoid many variables and very large amount of zeroes.
+
 
 # standardize data
-groupingDataScaled <- scale(groupingData[, -c(1, 2)])
-head(groupingDataScaled)
-str(groupingDataScaled)
+colnames(clusteringData)[1] # "Customer_ID"
+clusteringDataScaled <- scale(clusteringData[, -1])
+head(clusteringDataScaled)
+str(clusteringDataScaled)
 
-# find optimal number of clusters (partitional, euclidean, kmeans)
-numberOfClusters <- NbClust(groupingDataScaled,
+# Customer_ID variable is left out of standardized data because it is not
+# important for finding number of clusters and grouping data.
+
+
+# Partitional clustering is selected to enable iterative relocation. Data will
+# be clustered using Kmeans method because it is good for large amounts of data.
+# Euclidean distance will be used due to regular distance between two values
+# being important.
+
+# find optimal number of clusters
+# (partitional clustering, euclidean distance, kmeans method)
+numberOfClusters <- NbClust(clusteringDataScaled,
                             distance = "euclidean", method = "kmeans",
                             min.nc = 2, max.nc = 15)
 print(numberOfClusters)
+# The optimal number of clusters is 2.
 
-# grouping votes
+# clustering votes
 table(numberOfClusters$Best.nc[1,]) # 2
+# Clustering votes also show, with significant difference, that the optimal
+# number of clusters is 2.
 
 # group data
 RNGkind(sample.kind = "Rounding")
 set.seed(2)
-groups <- kmeans(groupingDataScaled, 2, nstart = 25)
+groups <- kmeans(clusteringDataScaled, 2, nstart = 25)
 print(groups)
 
-# groups comparison
-groups$size # 371, 3032
-groups$withinss # 40777.615, 9356.963
-length(groups$cluster) # 3403
 
-# create groups of data
-clusteredData <- data.frame(groupingData, groups$cluster)
+# groups of customers comparison
+groups$size             # 303, 3100
+groups$withinss         # 4728.549, 1421.516
+length(groups$cluster)  # 3403
+
+# First group is much smaller than the second group. Sum of squares of elements
+# in first group seems to be much greater that the one in the second group.
+
+
+# create datasets of data from groups
+clusteredData <- data.frame(clusteringData, groups$cluster)
 str(clusteredData)
 
 cluster1Data <- clusteredData[clusteredData$groups.cluster == 1,]
@@ -275,68 +391,69 @@ str(cluster2Data)
 # plot clustered data
 colnames(clusteredData)
 
-plot(cluster1Data$Storage...Organization)
-plot(cluster2Data$Storage...Organization)
+ggplot() +
+  geom_point(data = cluster2Data,
+             aes(x = Customer_ID, y = Technology, colour = "2")) + 
+  geom_point(data = cluster1Data,
+            aes(x = Customer_ID, y = Technology, colour = "1")) +
+  xlim(c(1, 3403)) +
+  scale_colour_manual(values = rev(brewer.pal(name = "Greens", n = 8)[c(6, 8)])) +
+  labs(x = "Customer ID", y = "Total spent on technology",
+      title = "Total spent on technology by groups of customers",
+      colour = "Groups") +
+  theme(plot.title = element_text(hjust = 0.5))
 
-plot(cluster1Data$Binders.and.Binder.Accessories)
-plot(cluster2Data$Binders.and.Binder.Accessories)
+ggplot() +
+  geom_point(data = cluster2Data,
+             aes(x = Customer_ID, y = Office.Supplies, colour = "2")) + 
+  geom_point(data = cluster1Data,
+             aes(x = Customer_ID, y = Office.Supplies, colour = "1")) +
+  xlim(c(1, 3403)) +
+  scale_colour_manual(values = rev(brewer.pal(name = "Greens", n = 8)[c(6, 8)])) +
+  labs(x = "Customer ID", y = "Total spent on office supplies",
+       title = "Total spent on office supplies by groups of customers",
+       colour = "Groups") +
+  theme(plot.title = element_text(hjust = 0.5))
 
-plot(cluster1Data$Chairs...Chairmats)
-plot(cluster2Data$Chairs...Chairmats)
+ggplot() +
+  geom_point(data = cluster2Data,
+             aes(x = Customer_ID, y = Furniture, colour = "2")) + 
+  geom_point(data = cluster1Data,
+             aes(x = Customer_ID, y = Furniture, colour = "1")) +
+  xlim(c(1, 3403)) +
+  scale_colour_manual(values = rev(brewer.pal(name = "Greens", n = 8)[c(6, 8)])) +
+  labs(x = "Customer ID", y = "Total spent on furniture",
+       title = "Total spent on furniture by groups of customers",
+       colour = "Groups") +
+  theme(plot.title = element_text(hjust = 0.5))
 
-plot(cluster1Data$Paper)
-plot(cluster2Data$Paper)
+ggplot() +
+  geom_point(data = data.frame(ID = cluster2Data$Customer_ID,
+                               TotalSpent = cluster2Data$Office.Supplies + cluster2Data$Furniture + cluster2Data$Technology),
+             aes(x = ID, y = TotalSpent, colour = "2")) +
+  geom_point(data = data.frame(ID = cluster1Data$Customer_ID,
+                               TotalSpent = cluster1Data$Office.Supplies + cluster1Data$Furniture + cluster1Data$Technology),
+             aes(x = ID, y = TotalSpent, colour = "1")) +
+  geom_hline(aes(yintercept = 30000), col = "#FD5602") +
+  geom_text(aes(x = c(3700), y = c(30000), label = "30000", vjust = -0.5), size = 4, col = "red") +
+  xlim(c(1, 3700)) +
+  scale_colour_manual(values = rev(brewer.pal(name = "Greens", n = 8)[c(6, 8)])) +
+  labs(x = "Customer ID", y = "Total spent",
+       title = "Total spent by groups of customers",
+       colour = "Groups") +
+  theme(plot.title = element_text(hjust = 0.5))
 
-plot(cluster1Data$Pens...Art.Supplies)
-plot(cluster2Data$Pens...Art.Supplies)
+# As it can be seen from the plots, two groups of customers are are very
+# different.
+# First group consists of customers who spend large amounts of money
+# buying products. They can be described as loyal customers and marketing
+# products to them is not a priority. Customers from the first group usually
+# spend more than 30000 on products.
+# Second group consists of customers who spend smaller amounts of money on
+# products. They are customers to whom we are not main suppliers and marketing
+# products to them is a priority. Customers from the first group usually spend
+# less than 30000 on products.
 
-plot(cluster1Data$Office.Machines)
-plot(cluster2Data$Office.Machines)
-
-plot(cluster1Data$Office.Furnishings)
-plot(cluster2Data$Office.Furnishings)
-
-plot(cluster1Data$Tables)
-plot(cluster2Data$Tables)
-
-plot(cluster1Data$Computer.Peripherals)
-plot(cluster2Data$Computer.Peripherals)
-
-plot(cluster1Data$Telephones.and.Communication)
-plot(cluster2Data$Telephones.and.Communication)
-
-ggplot(clusteredData, aes(x = Customer_ID, y = Computer.Peripherals, color = Region)) +
-  geom_point()
-
-ggplot(cluster1Data, aes(x = Customer_ID, y = Computer.Peripherals, color = Region)) +
-  geom_point()
-
-ggplot(cluster2Data, aes(x = Customer_ID, y = Computer.Peripherals, color = Region)) +
-  geom_point()
-
-
-ggplot(clusteredData, aes(x = Paper, y = Pens...Art.Supplies, color = Region)) +
-  geom_point()
-
-ggplot(cluster1Data, aes(x = Region, y = Paper, color = Region)) +
-  geom_point()
-
-# clusteredData[clusteredData$groups.cluster != 0,]
-ggplot(clusteredData, aes(x = Office.Furnishings, y = Tables, color = as.factor(groups.cluster))) +
-  geom_point() + xlim(0, 10000) + ylim(0, 20000)
-cluster2Data
-str(clusteredData)
-
-# INTERPRETATION
-
-ggplot(clusteredData, aes(x = Paper, y = Pens...Art.Supplies, color = as.factor(groups.cluster))) +
-  geom_point()
-
-ggplot(cluster1Data, aes(x = Paper, y = Pens...Art.Supplies, color = as.factor(groups.cluster))) +
-  geom_point()
-
-ggplot(cluster2Data, aes(x = Paper, y = Pens...Art.Supplies, color = as.factor(groups.cluster))) +
-  geom_point()
 
 
 ############################ TIME SERIES PREDICTION ############################
@@ -412,17 +529,6 @@ plot(forecast(fit, 365)) # Ne radi
 # ----------------------------------------------------------------------------
 
 
-
-
-# INTERPRETATION
-
-
-
-############################ ADVANCED VISUALIZATION ############################
-
-# data selection and preparation
-
-# ggplot2 visualizations
 
 
 # INTERPRETATION
