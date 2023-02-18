@@ -340,24 +340,78 @@ ggplot(cluster2Data, aes(x = Paper, y = Pens...Art.Supplies, color = as.factor(g
 
 
 ############################ TIME SERIES PREDICTION ############################
+# install.packages(c("stats", "forecast", "tseries"))
+library('stats')
+library('forecast')
+library('tseries')
 
-# data selection and preparation
+str(salesData)
 
-# describing data
+head(table(salesData$Order.Date, salesData$Profit))
 
-# clean data
+# Group the dates and sum the Profits for that day 
+dailyProfit <- aggregate(Profit ~ Order.Date, data = salesData, sum)
 
-# show moving averages
+# Add missing dates to data
+datesRange <- range(dailyProfit$Order.Date)
+datesRange # "2010-01-01" "2013-12-31"
 
-# data decomposition
+dateSeq <- seq(as.Date(datesRange[1]), as.Date(datesRange[2]), by = "day")
+allDates <- data.frame(Order.Date = dateSeq)
+allDates <- merge(allDates, dailyProfit, all.x = TRUE)
+allDates[is.na(allDates)] <- 0
 
-# stationarity
+dataTs <- ts(allDates$Profit, frequency = 1)
 
-# ARIMA model
+# Treba interpretirati
+plot(dataTs)
+lines(ma(dataTs, 3), col="Red")
+lines(ma(dataTs, 5), col="Blue")
+lines(ma(dataTs, 10), col="Green")
+lines(ma(dataTs, 30), col="Yellow")
 
-# residuals
+fit <- stl(dataTs, s.window="period")
+plot(fit)
 
-# forecasting by ARIMA model
+
+
+
+# ----------------------------------------------------------------------------
+# Provjeriti od ovdje
+
+
+# Ne radi
+fit <- ets(dataTs, model="ZZZ")
+plot(fit)
+plot(forecast(fit, 365))
+accuracy(fit)
+
+
+
+# Set up data for ARIMA model
+
+# Get the best diff level and apply it
+d <- ndiffs(dataTs)
+dataTsDiff <- diff(dataTs, lag=d)
+plot(dataTsDiff)
+
+# Test the stationary
+adf.test(dataTsDiff) # p < 0.05 suggests stationary
+
+
+Acf(dataTsDiff) # 2
+Pacf(dataTsDiff) # 13
+
+fit <- arima(dataTs, order(c(2, d, 13)))
+fit
+accuracy(fit)
+plot(forecast(fit, 365)) # Ne radi
+
+
+# Provjeriti do ovdje
+# ----------------------------------------------------------------------------
+
+
 
 
 # INTERPRETATION
