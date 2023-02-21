@@ -315,7 +315,7 @@ head(clusteringData)
 nrow(clusteringData)  # 3403
 str(clusteringData)
 
-# boxplot(clusteringData[, -c(2, 3)])
+
 ggplot(clusteringData) +
   geom_boxplot(aes(y = Furniture, x = "Furniture",
                    fill = "Furniture")) +
@@ -470,25 +470,28 @@ library('caret')
 # Data selection and preparation
 numericSalesData = subset(salesData[, sapply(salesData, is.numeric)], select = -Customer_ID)
 factorSalesData = salesData[, sapply(salesData, is.factor)]
+str(numericSalesData)
 
-
+cor(numericSalesData)
 
 # Simple one variable linear model for Profit prediction
 chart.Correlation(cor(numericSalesData))  # Profit ~ Sales -> 0.96***
+# correlation between Profit and Sales has the biggest correlation coefficient
+# among all the variable combination, next closest is Profit Discount with
+# -0.7 indicating a possible reversed correlation
 
 # Train 80%, Test 20%
-split_percentage = 0.8
-split <- sample(nrow(numericSalesData), split_percentage * nrow(numericSalesData))
+splitPercentage = 0.8
+split <- sample(nrow(numericSalesData), splitPercentage * nrow(numericSalesData))
 train <- numericSalesData[split, ]
 test <- numericSalesData[-split, ]
 
 fit <- lm(Profit ~ Sales, data=train)
 summary(fit)  # Profit = 71.72 + 0.45 * Sales
 
-plot(train$Sales, train$Profit)
+plot(train$Sales, train$Profit, xlab="Sales", ylab="Profit", main="Scatterplot")
 abline(fit, col="Blue")
-
-
+legend(0, 60000, legend=c("y = 71.72 + 0.45x"), col=c("blue"), lty=1:2, cex=0.8)
 
 # Multiple variable regression, variable selection
 leaps <- regsubsets(Sales ~ ., data=numericSalesData, nbest=1)
@@ -503,8 +506,8 @@ summary(leaps)
 # 5  ( 1 ) "*"      "*"        "*"            "*"    " "           "*"
 # 6  ( 1 ) "*"      "*"        "*"            "*"    "*"           "*"
 
-# Single variable cor = Sales ~ Profit
-# Two variable cor = Sales ~ Profit + Unit.Price
+# Best single variable cor = Sales ~ Profit
+# Best two variable cor = Sales ~ Profit + Unit.Price
 # ...
 # All variables included = Sales ~ .
 
@@ -571,5 +574,24 @@ table(factorSalesData$Container, factorSalesData$Ship.Mode)
 # X-squared = 4912, df = 4, p-value < 2.2e-16
 chisq.test(table(factorSalesData$Department, factorSalesData$Ship.Mode))
 
+# Pearson's Chi-squared test for count data shows the test statistic (X-squared)
+# is 4912, indicating a large difference between the expected and observed
+# frequencies in the contingency table. The degrees of freedom are 4, which
+# is calculated as the product of the number of levels minus one for each of the
+# two variables in the contingency table. The p-value for the test is less than
+# 2.2e-16, which is extremely small, suggesting strong evidence against the null
+# hypothesis of independence between the two categorical variables.
+
+# Therefore, we reject the null hypothesis and
+# conclude that there is a significant association between the "Department" and
+# "Ship.Mode" variables.
+
+
 # X-squared = 16636, df = 12, p-value < 2.2e-16
 chisq.test(table(factorSalesData$Container, factorSalesData$Ship.Mode))
+
+# Similar to the previous test, this test also suggest correlation between the
+# two variables. In this case "Container" and "Ship.Mode", with a larger
+# degrees of freedom (12) and x-squared of 16636, a large difference between
+# the expected and observed frequencies in the contingency table.
+
