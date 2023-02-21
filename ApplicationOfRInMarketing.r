@@ -315,7 +315,6 @@ head(clusteringData)
 nrow(clusteringData)  # 3403
 str(clusteringData)
 
-
 ggplot(clusteringData) +
   geom_boxplot(aes(y = Furniture, x = "Furniture",
                    fill = "Furniture")) +
@@ -453,8 +452,6 @@ ggplot() +
 # products. They are customers to whom we are not main suppliers and marketing
 # products to them is a priority. Customers from the first group usually spend
 # less than 30000 on products.
-
-
 
 
 
